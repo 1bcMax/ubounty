@@ -1,5 +1,8 @@
 """Main CLI entry point for ubounty."""
 
+import re
+from typing import Optional
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -7,7 +10,9 @@ from rich.table import Table
 from typing_extensions import Annotated
 
 from ubounty import __version__
+from ubounty.api_client import UbountyAPIClient
 from ubounty.auth import GitHubAuth
+from ubounty.config import get_settings
 
 app = typer.Typer(
     name="ubounty",
@@ -115,32 +120,146 @@ def logout() -> None:
 
 @app.command()
 def whoami() -> None:
-    """Show current logged-in user information."""
-    auth = GitHubAuth()
+    """Show current user information and wallet status."""
+    try:
+        settings = get_settings()
+        client = UbountyAPIClient(api_url=settings.ubounty_api_url)
 
-    if not auth.is_authenticated():
-        console.print("[yellow]Not logged in[/yellow]")
-        console.print("[dim]Run 'ubounty login' to authenticate[/dim]")
+        if not client.is_authenticated():
+            console.print("[yellow]Not logged in[/yellow]")
+            console.print("[dim]Run 'ubounty login' to authenticate[/dim]")
+            raise typer.Exit(1)
+
+        # Fetch user settings from API
+        user_settings = client.get_user_settings()
+
+        # Display user info
+        table = Table(title="Current User", show_header=False, box=None)
+        table.add_column("Field", style="bold blue")
+        table.add_column("Value", style="green")
+
+        table.add_row("Username", f"@{user_settings['github_username']}")
+        if user_settings.get("name"):
+            table.add_row("Name", user_settings["name"])
+        if user_settings.get("email"):
+            table.add_row("Email", user_settings["email"])
+
+        console.print()
+        console.print(table)
+
+        # Display wallet info
+        if user_settings.get("wallet"):
+            wallet = user_settings["wallet"]
+            wallet_table = Table(title="Wallet", show_header=False, box=None)
+            wallet_table.add_column("Field", style="bold blue")
+            wallet_table.add_column("Value", style="green")
+
+            if wallet["status"] == "bound":
+                wallet_table.add_row("Status", "✓ Bound")
+                wallet_table.add_row(
+                    "Network", f"{wallet['network']} (Chain ID: {wallet['chain_id']})"
+                )
+                wallet_table.add_row("Address", wallet["address"])
+            else:
+                wallet_table.add_row("Status", "⚠ Not bound")
+
+            console.print()
+            console.print(wallet_table)
+
+            if wallet["status"] != "bound":
+                console.print("\n[yellow]Tip:[/yellow] Bind your wallet at https://ubounty.ai/settings")
+
+        console.print()
+
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Unexpected error:[/bold red] {e}")
         raise typer.Exit(1)
 
-    user_info = auth.get_user_info()
-    if not user_info:
-        console.print("[red]Error: Could not retrieve user information[/red]")
+
+# Wallet command group
+wallet_app = typer.Typer(help="Manage your wallet")
+app.add_typer(wallet_app, name="wallet")
+
+
+@wallet_app.command("status")
+def wallet_status() -> None:
+    """Show wallet status."""
+    try:
+        settings = get_settings()
+        client = UbountyAPIClient(api_url=settings.ubounty_api_url)
+
+        if not client.is_authenticated():
+            console.print("[yellow]Not logged in[/yellow]")
+            console.print("[dim]Run 'ubounty login' to authenticate[/dim]")
+            raise typer.Exit(1)
+
+        user_settings = client.get_user_settings()
+
+        if not user_settings.get("wallet") or user_settings["wallet"]["status"] != "bound":
+            console.print("[yellow]⚠ No wallet address bound[/yellow]")
+            console.print("\n[dim]Bind your wallet at:[/dim] https://ubounty.ai/settings")
+            console.print("[dim]Or run:[/dim] ubounty wallet bind <address>")
+            raise typer.Exit(1)
+
+        wallet = user_settings["wallet"]
+
+        console.print("\n[bold green]✓ Wallet Bound[/bold green]")
+        console.print(
+            f"\n[bold]Network:[/bold] {wallet['network']} (Chain ID: {wallet['chain_id']})"
+        )
+        console.print(f"[bold]Address:[/bold] {wallet['address']}")
+        if wallet.get("bound_at"):
+            console.print(f"[dim]Bound at:[/dim] {wallet['bound_at']}")
+        console.print()
+
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
 
-    table = Table(title="Current User", show_header=False, box=None)
-    table.add_column("Field", style="bold blue")
-    table.add_column("Value", style="green")
 
-    table.add_row("Username", f"@{user_info.get('login', 'N/A')}")
-    if user_info.get("name"):
-        table.add_row("Name", user_info["name"])
-    if user_info.get("email"):
-        table.add_row("Email", user_info["email"])
+@wallet_app.command("bind")
+def wallet_bind(
+    address: Annotated[str, typer.Argument(help="Wallet address (0x...)")],
+) -> None:
+    """Bind a wallet address."""
+    console.print(
+        Panel.fit(
+            "[bold blue]Binding Wallet[/bold blue]",
+            subtitle=f"Address: {address}",
+            border_style="blue",
+        )
+    )
 
-    console.print()
-    console.print(table)
-    console.print()
+    # Client-side validation
+    if not re.match(r"^0x[a-fA-F0-9]{40}$", address):
+        console.print("[bold red]Error:[/bold red] Invalid address format")
+        console.print("[dim]Address must be 0x followed by 40 hex characters[/dim]")
+        raise typer.Exit(1)
+
+    try:
+        settings = get_settings()
+        client = UbountyAPIClient(api_url=settings.ubounty_api_url)
+
+        if not client.is_authenticated():
+            console.print("[yellow]Not logged in[/yellow]")
+            console.print("[dim]Run 'ubounty login' to authenticate[/dim]")
+            raise typer.Exit(1)
+
+        result = client.update_wallet(address)
+
+        console.print("\n[bold green]✓ Wallet address successfully bound![/bold green]")
+        console.print(f"\n[bold]Network:[/bold] {result['wallet']['network']}")
+        console.print(f"[bold]Address:[/bold] {result['wallet']['address']}")
+        console.print()
+
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        console.print("\n[yellow]Alternative:[/yellow] Bind your wallet on the website:")
+        console.print("→ https://ubounty.ai/settings")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -171,12 +290,10 @@ def setup() -> None:
     # Step 2: Anthropic API key
     console.print("\n[bold]Step 2: Anthropic API Key[/bold]")
     console.print(
-        "\n[dim]For now, create a .env file with:[/dim]"
+        "\n[dim]Create a .env file with:[/dim]"
         "\n  ANTHROPIC_API_KEY=your_anthropic_key"
     )
-    console.print(
-        "\n[dim]Get your API key at: https://console.anthropic.com/[/dim]\n"
-    )
+    console.print("\n[dim]Get your API key at: https://console.anthropic.com/[/dim]\n")
 
 
 def main() -> None:

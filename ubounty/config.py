@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     max_tokens: int = Field(default=8192, description="Maximum tokens for AI responses")
     temperature: float = Field(default=0.7, description="Temperature for AI responses")
 
+    # ubounty API settings
+    ubounty_api_url: str = Field(
+        default="https://ubounty.ai", description="ubounty API base URL"
+    )
+
     def validate_github_token(self) -> bool:
         """Check if GitHub token is set."""
         return self.github_token is not None and len(self.github_token) > 0

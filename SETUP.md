@@ -33,75 +33,63 @@ uv pip install -e ".[dev]"
 
 ## Configuration
 
-### Method 1: Quick Setup (Recommended)
+### Step 1: Log in with GitHub
 
-Run the interactive setup:
+The CLI uses GitHub OAuth for authentication:
+
 ```bash
-ubounty setup
-```
-
-This will guide you through:
-1. **GitHub Login** - Authenticate via device flow (no need to create tokens manually!)
-2. **Anthropic API Key** - Configure your Claude API key
-
-### Method 2: GitHub CLI Login (Easiest)
-
-Simply log in to GitHub:
-```bash
+# Start the login process
 ubounty login
 ```
 
 This will:
-1. Show you a code to copy
-2. Open GitHub in your browser
-3. Authenticate securely without manual token creation
-4. Save your credentials locally in `~/.config/ubounty/`
+1. Display a device code and URL
+2. Open your browser to https://github.com/login/device
+3. Ask you to enter the code and authorize ubounty
+4. Save your GitHub token securely to `~/.config/ubounty/credentials.json`
 
-Check your login status:
+Verify you're logged in:
 ```bash
 ubounty whoami
 ```
 
-Log out:
+You should see your GitHub username and wallet status.
+
+### Step 2: Bind Your Wallet (For Bounty Payouts)
+
+To receive bounty payments, you need to bind your Base wallet address:
+
+**Method A: On the Website (Recommended)**
+1. Go to https://ubounty.ai/settings
+2. Enter your wallet address (0x...)
+3. Save
+
+**Method B: Using CLI**
 ```bash
-ubounty logout
+ubounty wallet bind 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
 ```
 
-### Method 3: Manual Environment Variables (Alternative)
+⚠️ **Important**: Make sure you enter the correct address! Payments cannot be recovered if sent to the wrong address.
 
-If you prefer using environment variables:
-
-Copy the example env file:
+Check your wallet status:
 ```bash
-cp .env.example .env
+ubounty wallet status
 ```
 
-#### Get your GitHub Personal Access Token
+### Step 3: Configure Anthropic API (Optional)
 
-1. Go to https://github.com/settings/tokens
-2. Click "Generate new token" → "Generate new token (classic)"
-3. Give it a descriptive name (e.g., "ubounty")
-4. Select scopes:
-   - `repo` (full control of private repositories)
-   - `workflow` (if you want to update GitHub Actions)
-5. Click "Generate token" and copy it
+If you want to use AI features locally, set up your Anthropic API key:
 
-Add to `.env`:
-```
-GITHUB_TOKEN=ghp_your_token_here
-```
+1. Get your API key from https://console.anthropic.com/
+2. Create a `.env` file:
+   ```bash
+   cp .env.example .env
+   ```
+3. Edit `.env` and add:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-your_key_here
+   ```
 
-### Get your Anthropic API Key
-
-1. Go to https://console.anthropic.com/
-2. Sign up or log in
-3. Go to API Keys section
-4. Create a new API key
-
-Add to `.env`:
-```
-ANTHROPIC_API_KEY=sk-ant-your_key_here
-```
 
 
 ## Usage
@@ -177,13 +165,17 @@ mypy ubounty/
 
 ## Troubleshooting
 
-### "GitHub token not found"
-- Make sure `.env` file exists in the project root
-- Verify `GITHUB_TOKEN` is set correctly
-- Try running `ubounty setup`
+### "Not logged in" or "Authentication required"
+- Run `ubounty login` to authenticate with GitHub
+- Make sure you complete the device flow authorization in your browser
+- Check that `~/.config/ubounty/credentials.json` exists and has correct permissions (should be 0600)
+
+### "Invalid or expired GitHub token"
+- Your GitHub token may have expired or been revoked
+- Run `ubounty logout` and then `ubounty login` to re-authenticate
 
 ### "Anthropic API key not found"
-- Make sure `.env` file exists
+- Make sure `.env` file exists in the project root
 - Verify `ANTHROPIC_API_KEY` is set correctly
 - Check your API key is valid at https://console.anthropic.com/
 
@@ -191,6 +183,11 @@ mypy ubounty/
 - Ensure you're in a git repository
 - Verify the repository exists and you have access
 - Try specifying `--repo owner/repo` explicitly
+
+### "Invalid wallet address"
+- Wallet address must start with `0x` followed by 40 hexadecimal characters
+- Example: `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb`
+- Double-check you copied the full address
 
 ## Next Steps
 
